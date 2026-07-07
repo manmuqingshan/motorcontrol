@@ -68,6 +68,10 @@ void drv_calibrate(DRVStruct drv){
 void drv_print_faults(DRVStruct drv){
     uint16_t val1 = drv_read_FSR1(drv);
     uint16_t val2 = drv_read_FSR2(drv);
+    drv_print_fault_codes(val1, val2);
+}
+
+void drv_print_fault_codes(uint16_t val1, uint16_t val2){
 
     if(val1 & (1<<10)){printf("\n\rFAULT\n\r");}
 

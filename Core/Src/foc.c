@@ -99,10 +99,11 @@ void svm(float v_max, float u, float v, float w, float *dtc_u, float *dtc_v, flo
 
     float v_offset = (fminf3(u, v, w) + fmaxf3(u, v, w))*0.5f;
     float v_midpoint = .5f*(DTC_MAX+DTC_MIN);
+    float scale = v_max > 0.0f ? .5f*OVERMODULATION/v_max : 0.0f;	// no drive voltage until the bus voltage measurement is valid
 
-    *dtc_u = fast_fminf(fast_fmaxf((.5f*(u -v_offset)*OVERMODULATION/v_max + v_midpoint ), DTC_MIN), DTC_MAX);
-    *dtc_v = fast_fminf(fast_fmaxf((.5f*(v -v_offset)*OVERMODULATION/v_max + v_midpoint ), DTC_MIN), DTC_MAX);
-    *dtc_w = fast_fminf(fast_fmaxf((.5f*(w -v_offset)*OVERMODULATION/v_max + v_midpoint ), DTC_MIN), DTC_MAX);
+    *dtc_u = fast_fminf(fast_fmaxf(((u - v_offset)*scale + v_midpoint ), DTC_MIN), DTC_MAX);
+    *dtc_v = fast_fminf(fast_fmaxf(((v - v_offset)*scale + v_midpoint ), DTC_MIN), DTC_MAX);
+    *dtc_w = fast_fminf(fast_fmaxf(((w - v_offset)*scale + v_midpoint ), DTC_MIN), DTC_MAX);
 
     }
 
@@ -133,16 +134,10 @@ void init_controller_params(ControllerStruct *controller){
     controller->ki_q = KI_Q;
     controller->k_d = K_SCALE*I_BW;
     controller->k_q = K_SCALE*I_BW;
-    controller->alpha = 1.0f - 1.0f/(1.0f - DT*I_BW*TWO_PI_F);
     controller->ki_fw = .1f*controller->ki_d;
-    controller->phase_order = PHASE_ORDER;
     controller->flux_linkage = KT/(1.5f*PPAIRS);
     if(I_MAX <= 40.0f){controller->i_scale = I_SCALE;}
     else{controller->i_scale = 2.0f*I_SCALE;}
-    for(int i = 0; i<128; i++)	// Approximate duty cycle linearization
-    {
-        controller->inverter_tab[i] = 1.0f + 1.2f*exp(-0.0078125f*i/.032f);
-    }
 
     }
 
@@ -205,24 +200,18 @@ void update_observer(ControllerStruct *controller, ObserverStruct *observer)
     */
 }
 
-float linearize_dtc(ControllerStruct *controller, float dtc)
-{
-    float duty = fast_fmaxf(fast_fminf(fabs(dtc), .999f), 0.0f);;
-    int index = (int) (duty*127.0f);
-    float val1 = controller->inverter_tab[index];
-    float val2 = controller->inverter_tab[index+1];
-    return val1 + (val2 - val1)*(duty*128.0f - (float)index);
-}
-
 void field_weaken(ControllerStruct *controller)
 {
        /// Field Weakening ///
 
        controller->fw_int += controller->ki_fw*(controller->v_max - 1.0f - controller->v_ref);
-       controller->fw_int = fast_fmaxf(fast_fminf(controller->fw_int, 0.0f), -I_FW_MAX);
-       controller->i_q_des = controller->i_q_des + (controller->i_q_des > 0)*controller->fw_int + (controller->i_q_des < 0)*controller->fw_int;
+       controller->fw_int = fast_fmaxf(fast_fminf(controller->fw_int, 0.0f), -fast_fminf(I_FW_MAX, controller->i_max));
+       /* Reduce the q current reference magnitude as field weakening increases, saturating at zero */
+       if(controller->i_q_des > 0.0f){controller->i_q_des = fast_fmaxf(controller->i_q_des + controller->fw_int, 0.0f);}
+       else{controller->i_q_des = fast_fminf(controller->i_q_des - controller->fw_int, 0.0f);}
        controller->i_d_des = controller->fw_int;
-       float q_max = sqrtf(controller->i_max*controller->i_max - controller->i_d_des*controller->i_d_des);
+       float q_max_squared = controller->i_max*controller->i_max - controller->i_d_des*controller->i_d_des;
+       float q_max = q_max_squared > 0.0f ? sqrtf(q_max_squared) : 0.0f;
        controller->i_q_des = fast_fmaxf(fast_fminf(controller->i_q_des, q_max), -q_max);
 
 
@@ -244,7 +233,6 @@ void commutate(ControllerStruct *controller, EncoderStruct *encoder)
        controller->v_bus_filt = (1.0f-VBUS_FILT_ALPHA)*controller->v_bus_filt + VBUS_FILT_ALPHA*controller->v_bus;	// used for voltage saturation
 
        controller->v_max = OVERMODULATION*controller->v_bus_filt*(DTC_MAX-DTC_MIN)*SQRT1_3;
-       controller->v_margin = controller->v_max - controller->v_ref;
        controller->i_max = I_MAX; //I_MAX*(!controller->otw_flag) + I_MAX_CONT*controller->otw_flag;
 
        limit_norm(&controller->i_d_des, &controller->i_q_des, controller->i_max);	// 2.3 us
@@ -252,11 +240,6 @@ void commutate(ControllerStruct *controller, EncoderStruct *encoder)
        /// PI Controller ///
        float i_d_error = controller->i_d_des - controller->i_d;
        float i_q_error = controller->i_q_des - controller->i_q;
-
-       if(controller->i_q > controller->i_mag_max){
-    	   controller->i_mag_max = controller->i_q;
-       }
-
 
        // Calculate decoupling feed-forward voltages //
 

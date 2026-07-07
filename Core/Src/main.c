@@ -83,17 +83,12 @@ int count = 0;
 
 ControllerStruct controller;
 ObserverStruct observer;
-COMStruct com;
 FSMStruct state;
 EncoderStruct comm_encoder;
 DRVStruct drv;
 CalStruct comm_encoder_cal;
 CANTxMessage can_tx;
 CANRxMessage can_rx;
-
-/* init but don't allocate calibration arrays */
-int *error_array = NULL;
-int *lut_array = NULL;
 
 uint8_t Serial2RxBuffer[1];
 
@@ -181,13 +176,6 @@ int main(void)
   printf("\r\nFirmware Version Number: %.2f\r\n", VERSION_NUM);
 
   /* Controller Setup */
-  if(PHASE_ORDER){							// Timer channel to phase mapping
-
-  }
-  else{
-
-  }
-
   init_controller_params(&controller);
 
   /* calibration "encoder" zeroing */
@@ -230,7 +218,6 @@ int main(void)
   HAL_Delay(1);
   drv_disable_gd(drv);
   HAL_Delay(1);
-  //drv_enable_gd(drv);   */
   printf("ADC A OFFSET: %d     ADC B OFFSET: %d\r\n", controller.adc_a_offset, controller.adc_b_offset);
 
   /* Turn on PWM */
@@ -241,12 +228,10 @@ int main(void)
   /* CAN setup */
   can_rx_init(&can_rx);
   can_tx_init(&can_tx);
-  HAL_CAN_Start(&CAN_H); //start CAN
-  //__HAL_CAN_ENABLE_IT(&CAN_H, CAN_IT_RX_FIFO0_MSG_PENDING); // Start can interrupt
+  HAL_CAN_Start(&CAN_H); //start CAN.  RX is polled from the commutation interrupt
 
   /* Set Interrupt Priorities */
   HAL_NVIC_SetPriority(PWM_ISR, 0x0,0x0); // commutation > communication
-  HAL_NVIC_SetPriority(CAN_ISR, 0x01, 0x01);
 
   /* Start the FSM */
   state.state = MENU_MODE;
@@ -266,10 +251,14 @@ int main(void)
   {
 
 	  HAL_Delay(100);
-	  drv_print_faults(drv);
-	 // if(state.state==MOTOR_MODE){
-	  	  //printf("%.2f %.2f %.2f %.2f %.2f\r\n", controller.p_des, controller.v_des, controller.kp, controller.kd, controller.t_ff);
-	  //}
+	  /* Read the DRV fault registers with the commutation interrupt masked, so this SPI access
+	   * can't collide with the gate enable/disable SPI writes done on state transitions.
+	   * Printing happens after the interrupt is re-enabled, since it's slow. */
+	  HAL_NVIC_DisableIRQ(PWM_ISR);
+	  uint16_t drv_fsr1 = drv_read_FSR1(drv);
+	  uint16_t drv_fsr2 = drv_read_FSR2(drv);
+	  HAL_NVIC_EnableIRQ(PWM_ISR);
+	  drv_print_fault_codes(drv_fsr1, drv_fsr2);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

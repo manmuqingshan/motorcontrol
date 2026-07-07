@@ -49,7 +49,17 @@ void order_phases(EncoderStruct *encoder, ControllerStruct *controller, CalStruc
 	reset_foc(controller);
 
 	float theta_end = encoder->angle_multiturn[0];
-	cal->ppairs = round(2.0f*PI_F/fabsf(theta_end-cal->theta_start));
+	float theta_range = fabsf(theta_end - cal->theta_start);
+	int ppairs = theta_range > 0.001f ? (int)roundf(2.0f*PI_F/theta_range) : 0;
+	if((ppairs < 1) || (ppairs > PPAIRS_MAX)){
+		/* Rotor barely moved, or moved a non-physical amount - stalled rotor,
+		 * a bad encoder, or I_CAL too low.  Bail out before the pole-pair count
+		 * can run calibration sampling off the end of its arrays */
+		printf("Calibration failed: measured %d pole pairs (max %d).  Check the encoder and I_CAL\r\n", ppairs, PPAIRS_MAX);
+		cal->failed = 1;
+		return;
+	}
+	cal->ppairs = ppairs;
 
 	if(cal->theta_start < theta_end){
 		cal->phase_order = 0;
@@ -105,7 +115,7 @@ void calibrate_encoder(EncoderStruct *encoder, ControllerStruct *controller, Cal
 			cal->error_arr[cal->sample_count] = error + ENC_CPR*(error<0);
 			printf("%d %d %d %.3f\r\n", cal->sample_count, count_ref, cal->error_arr[cal->sample_count], cal->theta_ref);
 			cal->next_sample_time += 2.0f*PI_F/(W_CAL*SAMPLES_PER_PPAIR);
-			if(cal->sample_count == PPAIRS*SAMPLES_PER_PPAIR-1){
+			if((cal->sample_count >= PPAIRS*SAMPLES_PER_PPAIR-1) || (cal->sample_count >= N_CAL-1)){	// second check guards the array bound in case PPAIRS is bad
 				return;
 			}
 			cal->sample_count++;

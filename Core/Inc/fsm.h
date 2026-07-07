@@ -39,7 +39,7 @@ typedef struct{
 	uint8_t state_change;
 	uint8_t ready;
 	char cmd_buff[8];
-	char bytecount;
+	uint8_t bytecount;
 	char cmd_id;
 }FSMStruct;
 

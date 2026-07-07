@@ -29,7 +29,6 @@ void ps_sample(EncoderStruct * encoder, float dt){
 	/* Shift around previous samples */
 	encoder->old_angle = encoder->angle_singleturn;
 	for(int i = N_POS_SAMPLES-1; i>0; i--){encoder->angle_multiturn[i] = encoder->angle_multiturn[i-1];}
-	//for(int i = N_POS_SAMPLES-1; i>0; i--){encoder->count_buff[i] = encoder->count_buff[i-1];}
 	//memmove(&encoder->angle_multiturn[1], &encoder->angle_multiturn[0], (N_POS_SAMPLES-1)*sizeof(float)); // this is much slower for some reason
 
 	/* SPI read/write */
@@ -66,9 +65,11 @@ void ps_sample(EncoderStruct * encoder, float dt){
 	else if(angle_diff < -PI_F){rollover = 1;}
 	encoder->turns += rollover;
 	if(!encoder->first_sample){
+		/* On the first sample, pick the turn count so the multi-turn angle starts
+		 * within (-3*pi/2, pi/2] of the zero position, like the old mbed firmware.
+		 * angle_singleturn is in [0, 2*pi) here, so it can never be negative */
 		encoder->turns = 0;
 		if(encoder->angle_singleturn > PI_OVER_2_F){encoder->turns = -1;}
-		else if(encoder->angle_singleturn < -PI_OVER_2_F){encoder->turns = 1;}
 		encoder->first_sample = 1;
 	}
 
@@ -78,19 +79,7 @@ void ps_sample(EncoderStruct * encoder, float dt){
 	encoder->angle_multiturn[0] = encoder->angle_singleturn + TWO_PI_F*(float)encoder->turns;
 
 	/* Velocity */
-	/*
-	// Attempt at a moving least squares.  Wasn't any better
-		float m = (float)N_POS_SAMPLES;
-		float w = 1.0f/m;
-		float q = 12.0f/(m*m*m - m);
-		float c1 = 0.0f;
-		float ibar = (m - 1.0f)/2.0f;
-		for(int i = 0; i<N_POS_SAMPLES; i++){
-			c1 += encoder->angle_multiturn[i]*q*(i - ibar);
-		}
-		encoder->vel2 = -c1/dt;
-*/
-	//encoder->velocity = vel2
+	/* (Tried a moving least-squares fit here; it wasn't any better than the simple difference) */
 	encoder->velocity = (encoder->angle_multiturn[0] - encoder->angle_multiturn[N_POS_SAMPLES-1])/(dt*(float)(N_POS_SAMPLES-1));
 	encoder->elec_velocity = encoder->ppairs*encoder->velocity;
 

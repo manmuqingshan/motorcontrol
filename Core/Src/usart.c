@@ -115,6 +115,8 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* uartHandle)
 }
 
 /* USER CODE BEGIN 1 */
+#include "structs.h"
+
 int __io_putchar(int ch) {
 HAL_UART_Transmit(&huart2, (uint8_t*)&ch, 1, 0xffff);
 return 0;
@@ -122,11 +124,15 @@ return 0;
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-  /* Prevent unused argument(s) compilation warning */
+	update_fsm(&state, (char)Serial2RxBuffer[0]);
 	HAL_UART_Receive_IT(&huart2, (uint8_t *)Serial2RxBuffer, 1);
-  /* NOTE: This function should not be modified, when the callback is needed,
-           the HAL_UART_RxCpltCallback could be implemented in the user file
-   */
+}
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+	/* A UART error (overrun, noise, framing) aborts interrupt reception - restart it
+	 * so the serial console doesn't go dead, but don't act on the garbage byte */
+	HAL_UART_Receive_IT(&huart2, (uint8_t *)Serial2RxBuffer, 1);
 }
 /* USER CODE END 1 */
 

@@ -35,7 +35,10 @@
 			 break;
 
 		 case CALIBRATION_MODE:
-			 if(!comm_encoder_cal.done_ordering){
+			 if(comm_encoder_cal.failed){
+				 update_fsm(fsmstate, MENU_CMD);	// abort back to the menu, which disables the gate drive on exit
+			 }
+			 else if(!comm_encoder_cal.done_ordering){
 				 order_phases(&comm_encoder, &controller, &comm_encoder_cal, controller.loop_count);
 			 }
 			 else if(!comm_encoder_cal.done_cal){
@@ -43,7 +46,6 @@
 			 }
 			 else{
 				 /* Exit calibration mode when done */
-				 //for(int i = 0; i<128*PPAIRS; i++){printf("%d\r\n", error_array[i]);}
 				 E_ZERO = comm_encoder_cal.ezero;
 				 printf("E_ZERO: %d  %f\r\n", E_ZERO, TWO_PI_F*fmodf((comm_encoder.ppairs*(float)(-E_ZERO))/((float)ENC_CPR), 1.0f));
 				 memcpy(&comm_encoder.offset_lut, comm_encoder_cal.lut_arr, sizeof(comm_encoder.offset_lut));
@@ -115,6 +117,7 @@
 				comm_encoder_cal.done_cal = 0;
 				comm_encoder_cal.done_ordering = 0;
 				comm_encoder_cal.started = 0;
+				comm_encoder_cal.failed = 0;
 				comm_encoder.e_zero = 0;
 				memset(&comm_encoder.offset_lut, 0, sizeof(comm_encoder.offset_lut));
 				drv_enable_gd(drv);
@@ -154,9 +157,6 @@
 			case CALIBRATION_MODE:
 				//printf("Exiting Calibration Mode\r\n");
 				drv_disable_gd(drv);
-				//free(error_array);
-				//free(lut_array);
-
 				fsmstate->ready = 1;
 				break;
 		}
@@ -209,12 +209,14 @@
 				process_user_input(fsmstate);
 				break;
 			}
-			if(fsmstate->bytecount == 0){fsmstate->cmd_id = fsm_input;}
-			else{
-				fsmstate->cmd_buff[fsmstate->bytecount-1] = fsm_input;
-				//fsmstate->bytecount = fsmstate->bytecount%(sizeof(fsmstate->cmd_buff)/sizeof(fsmstate->cmd_buff[0])); // reset when buffer is full
+			if(fsmstate->bytecount == 0){
+				fsmstate->cmd_id = fsm_input;
+				fsmstate->bytecount++;
 			}
-			fsmstate->bytecount++;
+			else if(fsmstate->bytecount < sizeof(fsmstate->cmd_buff)){	// drop excess characters, and keep the last byte null so atoi/atof always see a terminated string
+				fsmstate->cmd_buff[fsmstate->bytecount-1] = fsm_input;
+				fsmstate->bytecount++;
+			}
 			/* If enter is typed, process user input */
 
 			break;
@@ -336,7 +338,7 @@
 			 printf("V_MAX set to %f\r\n", V_MAX);
 			 break;
 		 default:
-			 printf("\n\r '%c' Not a valid command prefix\n\r\n\r", fsmstate->cmd_buff);
+			 printf("\n\r '%c' Not a valid command prefix\n\r\n\r", fsmstate->cmd_id);
 			 break;
 
 		 }

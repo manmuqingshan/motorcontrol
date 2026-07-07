@@ -11,7 +11,6 @@
 
 /* ISRs */
 #define PWM_ISR			TIM1_UP_TIM10_IRQn	// PWM Timer ISR
-#define CAN_ISR			CAN1_RX0_IRQn		// CAN Receive ISR
 
 /* ADC */
 
@@ -60,9 +59,6 @@
 #define OVERMODULATION 1.0f        // 1.0 = no overmodulation
 #define CURRENT_FILT_ALPHA	.1f	// 1st order d/q current filter (not used in control)
 #define VBUS_FILT_ALPHA		.1f		// 1st order bus voltage filter
-
-#define D_INT_LIM V_BUS/(K_D*KI_D)  // Amps*samples
-#define Q_INT_LIM V_BUS/(K_Q*KI_Q)  // Amps*samples
 
 
 #endif

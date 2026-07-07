@@ -85,9 +85,8 @@ void HAL_CAN_MspInit(CAN_HandleTypeDef* canHandle)
     GPIO_InitStruct.Alternate = GPIO_AF9_CAN1;
     HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-    /* CAN1 interrupt Init */
-    HAL_NVIC_SetPriority(CAN1_RX0_IRQn, 0, 0);
-    HAL_NVIC_EnableIRQ(CAN1_RX0_IRQn);
+    /* CAN RX is polled from the commutation interrupt (can_tx_rx), not interrupt-driven,
+     * so the CAN1_RX0 interrupt is left disabled */
   /* USER CODE BEGIN CAN1_MspInit 1 */
 
   /* USER CODE END CAN1_MspInit 1 */
@@ -123,10 +122,10 @@ void HAL_CAN_MspDeInit(CAN_HandleTypeDef* canHandle)
 
 void can_rx_init(CANRxMessage *msg){
 	msg->filter.FilterFIFOAssignment=CAN_FILTER_FIFO0; 	// set fifo assignment
-	msg->filter.FilterIdHigh=CAN_ID<<5; 				// CAN ID
-	msg->filter.FilterIdLow=0x0;
-	msg->filter.FilterMaskIdHigh=0xFFF;
-	msg->filter.FilterMaskIdLow=0;
+	msg->filter.FilterIdHigh=CAN_ID<<5; 				// standard CAN ID, in FxR1[15:5]
+	msg->filter.FilterIdLow=0x0;						// IDE = 0 (standard frame), RTR = 0 (data frame)
+	msg->filter.FilterMaskIdHigh=0x7FF<<5;				// match the full 11-bit ID
+	msg->filter.FilterMaskIdLow=0x6;					// match the IDE and RTR bits
 	msg->filter.FilterMode = CAN_FILTERMODE_IDMASK;
 	msg->filter.FilterScale=CAN_FILTERSCALE_32BIT;
 	msg->filter.FilterActivation=ENABLE;

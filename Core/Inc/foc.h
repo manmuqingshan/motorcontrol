@@ -13,39 +13,31 @@
 
 
 typedef struct{
-	uint32_t tim_ch_w;								// Terminal W timer channel
-    int adc_a_raw, adc_b_raw, adc_c_raw, adc_vbus_raw;      // Raw ADC Values
+    int adc_a_raw, adc_b_raw, adc_vbus_raw;                 // Raw ADC Values
     float i_a, i_b, i_c;                                    // Phase currents
     float v_bus, v_bus_filt;                                // DC link voltage
     float theta_mech, theta_elec;                           // Rotor mechanical and electrical angle
-    float dtheta_mech, dtheta_elec, dtheta_elec_filt;       // Rotor mechanical and electrical angular velocit
+    float dtheta_mech, dtheta_elec;                         // Rotor mechanical and electrical angular velocity
     float i_d, i_q, i_q_filt, i_d_filt;                     // D/Q currents
-    float i_mag, i_mag_max;											// Current magnitude
     float v_d, v_q;                                         // D/Q voltages
     float dtc_u, dtc_v, dtc_w;                              // Terminal duty cycles
     float v_u, v_v, v_w;                                    // Terminal voltages
-    float i_scale, k_d, k_q, ki_d, ki_q, ki_fw, alpha;               // Current loop gains, current reference filter coefficient
+    float i_scale, k_d, k_q, ki_d, ki_q, ki_fw;             // Current loop gains
     float flux_linkage;
     float d_int, q_int;                                     // Current error integrals
-    int adc_a_offset, adc_b_offset, adc_c_offset, adc_vbus_offset; 		// ADC offsets
-    float i_d_des, i_q_des, i_d_des_filt, i_q_des_filt, t_ff_filt;     // Current references
+    int adc_a_offset, adc_b_offset;                         // ADC offsets
+    float i_d_des, i_q_des, t_ff_filt;                      // Current references
     int loop_count;                                         // Degubbing counter
     int timeout;                                            // Watchdog counter
-    int mode;
-    int ovp_flag;                                           // Over-voltage flag
-    int oc_flag;											// Over-current flag
-    int phase_order;
     union{
     	float commands[5];									// Making this easier to pass around without including foc.h everywhere
     	struct{
     		float p_des, v_des, kp, kd, t_ff;                   // Desired position, velocity, gains, torque
     	};
     };
-    float v_max, v_ref, fw_int, v_margin;                                    // output voltage magnitude, field-weakening integral
+    float v_max, v_ref, fw_int;                             // output voltage magnitude, field-weakening integral
     int otw_flag;                                           // Over-temp warning
     float i_max;											// Maximum current
-    float inverter_tab[128];								// Inverter linearization table
-    uint8_t invert_dtc;										// Inverter duty cycle inverting/non-inverting
     } ControllerStruct;
 
 typedef struct{
@@ -69,10 +61,8 @@ void reset_observer(ObserverStruct *observer);
 void init_controller_params(ControllerStruct *controller);
 void commutate(ControllerStruct *controller, EncoderStruct *encoder);
 void torque_control(ControllerStruct *controller);
-void limit_current_ref (ControllerStruct *controller);
 void update_observer(ControllerStruct *controller, ObserverStruct *observer);
 void field_weaken(ControllerStruct *controller);
-float linearize_dtc(ControllerStruct *controller, float dtc);
 void zero_commands(ControllerStruct * controller);
 
 

@@ -188,6 +188,7 @@ void drv_enable_gd(DRVStruct drv);
 void drv_disable_gd(DRVStruct drv);
 void drv_calibrate(DRVStruct drv);
 void drv_print_faults(DRVStruct drv);
+void drv_print_fault_codes(uint16_t val1, uint16_t val2);
 
 
 
