@@ -18,6 +18,8 @@
 #include "position_sensor.h"
 #include "drv8323.h"
 
+ static void save_preferences(void);
+
  void run_fsm(FSMStruct * fsmstate){
 	 /* run_fsm is run every commutation interrupt cycle */
 
@@ -44,19 +46,9 @@
 			 else if(!comm_encoder_cal.done_cal){
 				 calibrate_encoder(&comm_encoder, &controller, &comm_encoder_cal, controller.loop_count);
 			 }
-			 else{
-				 /* Exit calibration mode when done */
-				 E_ZERO = comm_encoder_cal.ezero;
-				 printf("E_ZERO: %d  %f\r\n", E_ZERO, TWO_PI_F*fmodf((comm_encoder.ppairs*(float)(-E_ZERO))/((float)ENC_CPR), 1.0f));
-				 memcpy(&comm_encoder.offset_lut, comm_encoder_cal.lut_arr, sizeof(comm_encoder.offset_lut));
-				 memcpy(&ENCODER_LUT, comm_encoder_cal.lut_arr, sizeof(comm_encoder_cal.lut_arr));
-				 //for(int i = 0; i<128; i++){printf("%d\r\n", ENCODER_LUT[i]);}
-				 if (!preference_writer_ready(prefs)){ preference_writer_open(&prefs);}
-				 preference_writer_flush(&prefs);
-				 preference_writer_close(&prefs);
-				 preference_writer_load(prefs);
-				 update_fsm(fsmstate, 27);
-			 }
+			 /* Once done_cal is set, idle here.  The main loop (run_fsm_slow) saves
+			  * the result to flash and exits to the menu - flash writes stall the
+			  * CPU for far too long to do them in this interrupt */
 
 			 break;
 
@@ -78,8 +70,7 @@
 			 break;
 
 		 case ENCODER_MODE:
-			 ps_print(&comm_encoder, 100);
-			 break;
+			 break;		// encoder data is printed by the main loop
 
 		 case INIT_TEMP_MODE:
 			 break;
@@ -93,12 +84,10 @@
 
 		switch(fsmstate->state){
 				case MENU_MODE:
-				//printf("Entering Main Menu\r\n");
-				enter_menu_state();
+				fsmstate->print_pending = 1;	// main loop prints the menu
 				break;
 			case SETUP_MODE:
-				//printf("Entering Setup\r\n");
-				enter_setup_state();
+				fsmstate->print_pending = 1;	// main loop prints the setup screen
 				break;
 			case ENCODER_MODE:
 				//printf("Entering Encoder Mode\r\n");
@@ -118,6 +107,7 @@
 				comm_encoder_cal.done_ordering = 0;
 				comm_encoder_cal.started = 0;
 				comm_encoder_cal.failed = 0;
+				comm_encoder_cal.sample_count = 0;	// so the main loop doesn't stream samples left over from a previous calibration
 				comm_encoder.e_zero = 0;
 				memset(&comm_encoder.offset_lut, 0, sizeof(comm_encoder.offset_lut));
 				drv_enable_gd(drv);
@@ -192,21 +182,14 @@
 					fsmstate->ready = 0;
 					break;
 				case ZERO_CMD:
-					comm_encoder.m_zero = 0;
-					ps_sample(&comm_encoder, DT);
-					int zero_count = comm_encoder.count;
-					M_ZERO = zero_count;
-					if (!preference_writer_ready(prefs)){ preference_writer_open(&prefs);}
-					preference_writer_flush(&prefs);
-					preference_writer_close(&prefs);
-					preference_writer_load(prefs);
-					printf("\n\r  Saved new zero position:  %d\n\r\n\r", M_ZERO);
+					fsmstate->zero_pending = 1;		// main loop samples the position and saves it to flash
 					break;
 				}
 			break;
 		case SETUP_MODE:
+			if(fsmstate->cmd_pending){break;}	// drop input until the main loop has processed the pending command
 			if(fsm_input == ENTER_CMD){
-				process_user_input(fsmstate);
+				fsmstate->cmd_pending = 1;		// main loop runs process_user_input
 				break;
 			}
 			if(fsmstate->bytecount == 0){
@@ -344,17 +327,94 @@
 		 }
 
 	 /* Write new settings to flash */
-
-	 if (!preference_writer_ready(prefs)){ preference_writer_open(&prefs);}
-	 preference_writer_flush(&prefs);
-	 preference_writer_close(&prefs);
-	 preference_writer_load(prefs);
+	 save_preferences();
 
 	 enter_setup_state();
 
 	 fsmstate->bytecount = 0;
 	 fsmstate->cmd_id = 0;
 	 memset(&fsmstate->cmd_buff, 0, sizeof(fsmstate->cmd_buff));
+ }
+
+ static void save_preferences(void){
+	 /* Write settings to flash.  Erasing the preference sector stalls the whole
+	  * CPU (including the commutation interrupt) for up to ~2 seconds, so this
+	  * must only be called from the main loop, in states where the gate drive
+	  * is off.  Kick the watchdog first so the stall can't trip it. */
+	 IWDG->KR = 0xAAAA;
+	 if (!preference_writer_ready(prefs)){ preference_writer_open(&prefs);}
+	 preference_writer_flush(&prefs);
+	 preference_writer_close(&prefs);
+	 preference_writer_load(prefs);
+	 IWDG->KR = 0xAAAA;
+ }
+
+ void run_fsm_slow(FSMStruct * fsmstate){
+	 /* All the slow, non-realtime state machine work: printing and flash writes.
+	  * Called from the main loop every millisecond or so - never from an interrupt.
+	  * The fast ISR (run_fsm) hands work over here through the *_pending flags. */
+
+	 static int cal_samples_printed = 0;
+	 static int encoder_print_count = 0;
+
+	 /* Print the menu/setup screen after a state change */
+	 if(fsmstate->print_pending){
+		 fsmstate->print_pending = 0;
+		 if(fsmstate->state == MENU_MODE){enter_menu_state();}
+		 else if(fsmstate->state == SETUP_MODE){enter_setup_state();}
+	 }
+
+	 /* Process a completed setup command */
+	 if(fsmstate->cmd_pending){
+		 if(fsmstate->state == SETUP_MODE){process_user_input(fsmstate);}
+		 fsmstate->cmd_pending = 0;
+	 }
+
+	 /* Zero the mechanical position and save it */
+	 if(fsmstate->zero_pending){
+		 fsmstate->zero_pending = 0;
+		 if(fsmstate->state == MENU_MODE){	// only with the gate drive off
+			 M_ZERO = comm_encoder.count;
+			 save_preferences();
+			 printf("\n\r  Saved new zero position:  %d\n\r\n\r", M_ZERO);
+		 }
+	 }
+
+	 if(fsmstate->state == CALIBRATION_MODE){
+		 /* Stream out new calibration samples as they're taken (forward pass only -
+		  * sample_count counts back down during the reverse pass) */
+		 while(cal_samples_printed < comm_encoder_cal.sample_count){
+			 printf("%d %d\r\n", cal_samples_printed, comm_encoder_cal.error_arr[cal_samples_printed]);
+			 cal_samples_printed++;
+		 }
+
+		 /* When calibration finishes, exit to the menu first (the state transition
+		  * in the ISR disables the gate drive), then save the results to flash */
+		 if(comm_encoder_cal.done_ordering && comm_encoder_cal.done_cal){
+			 update_fsm(fsmstate, MENU_CMD);
+			 HAL_Delay(1);		// a few commutation cycles, so the transition has happened
+			 E_ZERO = comm_encoder_cal.ezero;
+			 memcpy(&comm_encoder.offset_lut, comm_encoder_cal.lut_arr, sizeof(comm_encoder.offset_lut));
+			 memcpy(&ENCODER_LUT, comm_encoder_cal.lut_arr, sizeof(comm_encoder_cal.lut_arr));
+			 save_preferences();
+			 printf("E_ZERO: %d  %f\r\n", E_ZERO, TWO_PI_F*fmodf((comm_encoder.ppairs*(float)(-E_ZERO))/((float)ENC_CPR), 1.0f));
+			 for(int i = 0; i<N_LUT; i++){printf("%d %d\r\n", i, comm_encoder_cal.lut_arr[i]);}
+			 comm_encoder_cal.done_cal = 0;		// consume, so this only runs once
+			 comm_encoder_cal.done_ordering = 0;
+		 }
+	 }
+	 else{
+		 cal_samples_printed = 0;
+	 }
+
+	 /* Print encoder data a few times a second in encoder mode */
+	 if(fsmstate->state == ENCODER_MODE){
+		 if(++encoder_print_count >= 200){
+			 encoder_print_count = 0;
+			 ps_print(&comm_encoder, 0);
+		 }
+	 }
+
  }
 
  void enter_motor_mode(void){

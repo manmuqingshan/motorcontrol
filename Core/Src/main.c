@@ -103,8 +103,22 @@ void SystemClock_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-
-
+static void watchdog_init(void){
+	/* Independent watchdog, kicked by the commutation interrupt.  If the control
+	 * loop ever stops running (wedged SPI, stuck ADC poll, crash), this resets
+	 * the chip instead of leaving the PWM frozen with the gate drive enabled.
+	 *
+	 * Timeout is ~4 s nominal.  It can't be much shorter: saving preferences
+	 * erases a 128 KB flash sector, which stalls the whole CPU (including the
+	 * kicking interrupt) for up to ~2 s, and the LSI clock feeding the watchdog
+	 * is loose (17-47 kHz across parts and temperature). */
+	DBGMCU->APB1FZ |= DBGMCU_APB1_FZ_DBG_IWDG_STOP;	// pause the watchdog while halted on a breakpoint
+	IWDG->KR = 0x5555;								// enable register access
+	IWDG->PR = 0x3;									// prescaler /32: ~1 kHz tick from the ~32 kHz LSI
+	IWDG->RLR = 4000;								// ~4 s nominal timeout
+	IWDG->KR = 0xAAAA;								// latch the reload value
+	IWDG->KR = 0xCCCC;								// start the watchdog.  No way to stop it now
+}
 
 /* USER CODE END 0 */
 
@@ -146,6 +160,11 @@ int main(void)
   MX_ADC3_Init();
   /* USER CODE BEGIN 2 */
 
+  /* Start the watchdog first, so a hang anywhere - including during init -
+   * resets the chip.  The commutation interrupt kicks it once running;
+   * all of init takes well under the ~4 s timeout */
+  watchdog_init();
+
   /* Load settings from flash */
   preference_writer_init(&prefs, 6);
   preference_writer_load(prefs);
@@ -174,6 +193,10 @@ int main(void)
   if(isnan(V_MIN)){V_MIN = -65.0f;}
 
   printf("\r\nFirmware Version Number: %.2f\r\n", VERSION_NUM);
+  if(RCC->CSR & RCC_CSR_IWDGRSTF){
+	  printf("!!! Last reset caused by the watchdog - control loop stopped running !!!\r\n");
+  }
+  __HAL_RCC_CLEAR_RESET_FLAGS();
 
   /* Controller Setup */
   init_controller_params(&controller);
@@ -192,10 +215,21 @@ int main(void)
 
   //for(int i = 0; i<128; i++){printf("%d\r\n", comm_encoder.offset_lut[i]);}
 
-  /* Turn on ADCs */
-  HAL_ADC_Start(&hadc1);
-  HAL_ADC_Start(&hadc2);
-  HAL_ADC_Start(&hadc3);
+  /* Turn on ADCs.  Injected conversions on all three are triggered by the
+   * PWM timer update event (triple injected simultaneous mode) */
+  HAL_ADCEx_InjectedStart(&hadc2);
+  HAL_ADCEx_InjectedStart(&hadc3);
+  HAL_ADCEx_InjectedStart(&hadc1);	// master last: arms the TIM1 TRGO trigger
+
+  /* Turn on PWM.  The timer update event triggers current/voltage sampling,
+   * so it must be running before zero_current() below can sample anything */
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
+  controller.dtc_u = 0.0f;
+  controller.dtc_v = 0.0f;
+  controller.dtc_w = 0.0f;
+  set_dtc(&controller);				// command all phases low before the gate driver wakes up
 
   /* DRV8323 setup */
   HAL_GPIO_WritePin(DRV_CS, GPIO_PIN_SET ); 	// CS high
@@ -220,11 +254,6 @@ int main(void)
   HAL_Delay(1);
   printf("ADC A OFFSET: %d     ADC B OFFSET: %d\r\n", controller.adc_a_offset, controller.adc_b_offset);
 
-  /* Turn on PWM */
-  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
-  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
-  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
-
   /* CAN setup */
   can_rx_init(&can_rx);
   can_tx_init(&can_tx);
@@ -237,6 +266,7 @@ int main(void)
   state.state = MENU_MODE;
   state.next_state = MENU_MODE;
   state.ready = 1;
+  state.print_pending = 1;	// print the menu on power-up
 
 
   /* Turn on interrupts */
@@ -247,18 +277,27 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  int main_loop_count = 0;
   while (1)
   {
+	  HAL_Delay(1);
 
-	  HAL_Delay(100);
-	  /* Read the DRV fault registers with the commutation interrupt masked, so this SPI access
-	   * can't collide with the gate enable/disable SPI writes done on state transitions.
-	   * Printing happens after the interrupt is re-enabled, since it's slow. */
-	  HAL_NVIC_DisableIRQ(PWM_ISR);
-	  uint16_t drv_fsr1 = drv_read_FSR1(drv);
-	  uint16_t drv_fsr2 = drv_read_FSR2(drv);
-	  HAL_NVIC_EnableIRQ(PWM_ISR);
-	  drv_print_fault_codes(drv_fsr1, drv_fsr2);
+	  /* Slow state machine work: printing, flash saves.  All of it was moved
+	   * out of the interrupts so it can't stall commutation */
+	  run_fsm_slow(&state);
+
+	  /* Check the DRV8323 fault registers every ~100 ms.  The SPI reads happen
+	   * with the commutation interrupt masked, so they can't collide with the
+	   * gate enable/disable SPI writes done on state transitions.  Printing
+	   * happens after the interrupt is re-enabled, since it's slow. */
+	  if(++main_loop_count >= 100){
+		  main_loop_count = 0;
+		  HAL_NVIC_DisableIRQ(PWM_ISR);
+		  uint16_t drv_fsr1 = drv_read_FSR1(drv);
+		  uint16_t drv_fsr2 = drv_read_FSR2(drv);
+		  HAL_NVIC_EnableIRQ(PWM_ISR);
+		  drv_print_fault_codes(drv_fsr1, drv_fsr2);
+	  }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -327,8 +366,14 @@ void SystemClock_Config(void)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-
+  /* Get the power stage into a safe state, then wait.  If the watchdog is
+   * running it will reset the chip; if this happens during init (before the
+   * watchdog starts), hang here with the gate drive off. */
+  __disable_irq();
+  fault_shutdown();
+  while (1)
+  {
+  }
   /* USER CODE END Error_Handler_Debug */
 }
 

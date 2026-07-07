@@ -36,14 +36,19 @@ extern "C" {
 typedef struct{
 	uint8_t state;
 	uint8_t next_state;
-	uint8_t state_change;
 	uint8_t ready;
 	char cmd_buff[8];
 	uint8_t bytecount;
 	char cmd_id;
+	/* Requests handed from interrupt context to the main loop, which does all
+	 * the slow work (printing, flash writes) that must not block commutation */
+	volatile uint8_t print_pending;			// print the menu/setup screen for the current state
+	volatile uint8_t cmd_pending;			// a setup command is waiting in cmd_buff
+	volatile uint8_t zero_pending;			// zero the mechanical position and save it
 }FSMStruct;
 
 void run_fsm(FSMStruct* fsmstate);
+void run_fsm_slow(FSMStruct* fsmstate);
 void update_fsm(FSMStruct * fsmstate, char fsm_input);
 void fsm_enter_state(FSMStruct * fsmstate);
 void fsm_exit_state(FSMStruct * fsmstate);

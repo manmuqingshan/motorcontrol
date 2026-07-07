@@ -21,9 +21,11 @@
 #include "can.h"
 
 /* USER CODE BEGIN 0 */
+#include <string.h>
 #include "hw_config.h"
 #include "user_config.h"
 #include "math_ops.h"
+#include "structs.h"
 /* USER CODE END 0 */
 
 CAN_HandleTypeDef hcan1;
@@ -155,6 +157,7 @@ void pack_reply(CANTxMessage *msg, uint8_t id, float p, float v, float t, float 
     int v_int = float_to_uint(v, V_MIN, V_MAX, 12);
     int t_int = float_to_uint(t, -(I_MAX+SENSE_BUFFER)*KT*GR, (I_MAX+SENSE_BUFFER)*KT*GR, 12);
     int vb_int = float_to_uint(vb, VB_MIN, VB_MAX, 8);
+    msg->tx_header.DLC = 7;
     msg->data[0] = id;
     msg->data[1] = p_int>>8;
     msg->data[2] = p_int&0xFF;
@@ -195,6 +198,50 @@ void unpack_cmd(CANRxMessage msg, float *commands){// ControllerStruct * control
     //printf("Received   ");
     //printf("%.3f  %.3f  %.3f  %.3f  %.3f   %.3f", controller->p_des, controller->v_des, controller->kp, controller->kd, controller->t_ff, controller->i_q_ref);
     //printf("\n\r");
+    }
+
+/// Float Variable Read Reply ///
+/// Response to a CAN_OP_READ_VAR request
+/// 0:   [CAN ID]
+/// 1:   [variable ID]
+/// 2-5: [float32, little-endian]
+void pack_float_reply(CANTxMessage *msg, uint8_t var_id, float value){
+    msg->tx_header.DLC = 6;
+    msg->data[0] = CAN_ID;
+    msg->data[1] = var_id;
+    memcpy(&msg->data[2], &value, sizeof(float));	// Cortex-M4 is little-endian
+    }
+
+/// Float Variable Pair Read Reply ///
+/// Response to a 3-byte CAN_OP_READ_VAR request: two variables in one frame.
+/// 0-3: [float32_a, little-endian]
+/// 4-7: [float32_b, little-endian]
+/// No room for the CAN_ID/var_id echo - the master matches replies to requests by order
+void pack_float_pair_reply(CANTxMessage *msg, float value_a, float value_b){
+    msg->tx_header.DLC = 8;
+    memcpy(&msg->data[0], &value_a, sizeof(float));
+    memcpy(&msg->data[4], &value_b, sizeof(float));
+    }
+
+/// Look up a variable by ID for the float read protocol ///
+/// Called from the commutation interrupt, so everything here must be fast
+float can_read_variable(uint8_t var_id){
+    switch(var_id){
+        case CAN_VAR_POSITION:		return comm_encoder.angle_multiturn/GR;
+        case CAN_VAR_VELOCITY:		return comm_encoder.velocity/GR;
+        case CAN_VAR_I_Q:			return controller.i_q_filt;
+        case CAN_VAR_I_D:			return controller.i_d_filt;
+        case CAN_VAR_TORQUE:		return controller.i_q_filt*KT*GR;
+        case CAN_VAR_V_BUS:			return controller.v_bus_filt;
+        case CAN_VAR_V_Q:			return controller.v_q;
+        case CAN_VAR_V_D:			return controller.v_d;
+        case CAN_VAR_I_A:			return controller.i_a;
+        case CAN_VAR_I_B:			return controller.i_b;
+        case CAN_VAR_I_C:			return controller.i_c;
+        case CAN_VAR_THETA_ELEC:	return comm_encoder.elec_angle;
+        case CAN_VAR_FW_INT:		return controller.fw_int;
+        default:					return NAN;		// unknown ID reads back NaN
+        }
     }
 
 /* USER CODE END 1 */

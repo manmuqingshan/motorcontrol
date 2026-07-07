@@ -40,24 +40,26 @@ void set_dtc(ControllerStruct *controller){
 }
 
 void analog_sample (ControllerStruct *controller){
-	/* Sampe ADCs */
+	/* Phase current and bus voltage conversions are hardware-triggered by the
+	 * PWM timer update event (triple injected simultaneous mode), so they are
+	 * sampled at the same point in the PWM cycle every loop, in the middle of
+	 * the low-side conduction window - the same event that runs this interrupt.
+	 * The conversion finishes within a microsecond of the interrupt starting,
+	 * so just wait for it.  If it never finishes (ADC or trigger
+	 * misconfiguration), the watchdog resets the chip. */
+	while(!__HAL_ADC_GET_FLAG(&ADC_CH_MAIN, ADC_FLAG_JEOC)){;}
+	__HAL_ADC_CLEAR_FLAG(&ADC_CH_MAIN, ADC_FLAG_JEOC);
+
 	/* Handle phase order swapping so that voltage/current/torque match encoder direction */
 	if(!PHASE_ORDER){
-		controller->adc_a_raw = HAL_ADC_GetValue(&ADC_CH_IA);
-		controller->adc_b_raw = HAL_ADC_GetValue(&ADC_CH_IB);
-		//adc_ch_ic = ADC_CH_IC;
+		controller->adc_a_raw = ADC_CH_IA.Instance->JDR1;
+		controller->adc_b_raw = ADC_CH_IB.Instance->JDR1;
 	}
 	else{
-		controller->adc_a_raw = HAL_ADC_GetValue(&ADC_CH_IB);
-		controller->adc_b_raw = HAL_ADC_GetValue(&ADC_CH_IA);
-		//adc_ch_ic = ADC_CH_IB;
+		controller->adc_a_raw = ADC_CH_IB.Instance->JDR1;
+		controller->adc_b_raw = ADC_CH_IA.Instance->JDR1;
 	}
-
-
-	HAL_ADC_Start(&ADC_CH_MAIN);
-	HAL_ADC_PollForConversion(&ADC_CH_MAIN, HAL_MAX_DELAY);
-
-	controller->adc_vbus_raw = HAL_ADC_GetValue(&ADC_CH_VBUS);
+	controller->adc_vbus_raw = ADC_CH_VBUS.Instance->JDR1;
 	controller->v_bus = (float)controller->adc_vbus_raw*V_SCALE;
 
     controller->i_a = controller->i_scale*(float)(controller->adc_a_raw - controller->adc_a_offset);    // Calculate phase currents from ADC readings
@@ -223,7 +225,7 @@ void commutate(ControllerStruct *controller, EncoderStruct *encoder)
 		controller->theta_elec = encoder->elec_angle;
 		controller->dtheta_elec = encoder->elec_velocity;
 		controller->dtheta_mech = encoder->velocity/GR;
-		controller->theta_mech = encoder->angle_multiturn[0]/GR;
+		controller->theta_mech = encoder->angle_multiturn/GR;
 
        /// Commutation  ///
        dq0(controller->theta_elec, controller->i_a, controller->i_b, controller->i_c, &controller->i_d, &controller->i_q);    //dq0 transform on currents - 3.8 us
