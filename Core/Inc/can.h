@@ -48,17 +48,53 @@ extern CAN_HandleTypeDef hcan1;
 #define VB_MAX 40.0f
 #define SENSE_BUFFER 0.0f
 
-/* Extended protocol:
- * All legacy frames (commands, FF... special commands) are 8 bytes long, so
- * any frame shorter than 8 bytes is an extended-protocol frame, with the
- * first byte as an opcode.  Frames with unknown opcodes/lengths are ignored. */
-#define CAN_OP_READ_VAR		0x01	// single: request [CAN_OP_READ_VAR, var_id], 2 bytes
-									//         reply   [CAN_ID, var_id, float32 little-endian], 6 bytes
-									// pair:   request [CAN_OP_READ_VAR, var_id_a, var_id_b], 3 bytes
-									//         reply   [float32_a, float32_b, little-endian], 8 bytes
-									// The pair reply has no room for the CAN_ID/var_id echo, so
-									// don't interleave pair requests to multiple motors sharing
-									// one master ID - the replies are told apart by request order
+/* ------------------------------------------------------------------------
+ * CAN protocol
+ *
+ * The 11-bit CAN ID is split into a 4-bit opcode and a 7-bit node ID:
+ *
+ *     ID = (opcode << 7) | node_id          node_id = CAN_ID, 0-127
+ *
+ * Opcode 0 is the legacy protocol, so plain-ID frames from old masters work
+ * unchanged.  Lower opcodes win bus arbitration, so commands beat telemetry.
+ * All floats are float32, little-endian.  Frames with unknown opcodes or
+ * lengths, or NaN command values, are ignored.
+ *
+ * op  name              dir     data                            notes
+ * 0x0 LEGACY            M->S    8-byte packed command           replies with 7-byte packed telemetry to CAN_MASTER
+ *                               [FF x7, FC/FD/FE]               enter motor mode / menu mode / zero
+ *                               [CAN_LEGACY_READ_VAR, id]       single float read, reply [CAN_ID, id, f32] to CAN_MASTER
+ *                               [CAN_LEGACY_READ_VAR, a, b]     pair float read, reply [f32, f32] to CAN_MASTER
+ * 0x1 SET_PV            M->S    [p_des f32][v_des f32]          clamped to P/V limits; resets timeout; telemetry reply
+ * 0x2 SET_GAINS         M->S    [kp f32][kd f32]                clamped to 0..KP_MAX/KD_MAX; resets timeout; telemetry reply
+ * 0x3 SET_TFF           M->S    [t_ff f32]                      clamped to +/-I_MAX*KT*GR; resets timeout; telemetry reply
+ * 0x4 SET_REPLY_FORMAT  M->S    [var_id_a][var_id_b]            sets telemetry reply content (RAM, not saved); telemetry reply
+ * 0x5 READ_VARS         M->S    [var_id_a][var_id_b] or [var_id] one-shot read; telemetry reply; does NOT reset timeout
+ * 0x6 CONTROL           M->S    [CAN_CTRL_x]                    enter motor mode / menu mode / zero
+ * 0xF TELEMETRY         S->M    [f32 a][f32 b]                  reply to opcodes 1-5, sent with ID = (0xF<<7)|CAN_ID,
+ *                                                               so the sender is identified by the ID bits
+ * ------------------------------------------------------------------------ */
+#define CAN_OPCODE(stdid)		((stdid) >> 7)
+#define CAN_NODE_ID(stdid)		((stdid) & 0x7F)
+
+#define CAN_OP_LEGACY			0x0
+#define CAN_OP_SET_PV			0x1
+#define CAN_OP_SET_GAINS		0x2
+#define CAN_OP_SET_TFF			0x3
+#define CAN_OP_SET_REPLY_FORMAT	0x4
+#define CAN_OP_READ_VARS		0x5
+#define CAN_OP_CONTROL			0x6
+#define CAN_OP_TELEMETRY		0xF
+
+/* CAN_OP_CONTROL command bytes */
+#define CAN_CTRL_MOTOR_MODE		1
+#define CAN_CTRL_MENU_MODE		2
+#define CAN_CTRL_ZERO			3
+
+/* In-payload opcode for float reads within the legacy protocol (any legacy
+ * frame shorter than 8 bytes; kept for compatibility with READ_VARS masters
+ * from before the ID-opcode scheme) */
+#define CAN_LEGACY_READ_VAR		0x01
 
 /* Variable IDs readable with CAN_OP_READ_VAR.  Unknown IDs read back NaN */
 #define CAN_VAR_POSITION	0		// multiturn position (rad, output shaft)
@@ -90,6 +126,7 @@ typedef struct{
 typedef struct{
 	uint8_t id;
 	uint8_t data[8];
+	uint8_t reply_var_a, reply_var_b;	// telemetry reply content, set by CAN_OP_SET_REPLY_FORMAT
 	CAN_TxHeaderTypeDef tx_header;
 }CANTxMessage ;
 
@@ -99,6 +136,8 @@ void pack_reply(CANTxMessage *msg, uint8_t id, float p, float v, float t, float 
 void unpack_cmd(CANRxMessage msg, float *commands);
 void pack_float_reply(CANTxMessage *msg, uint8_t var_id, float value);
 void pack_float_pair_reply(CANTxMessage *msg, float value_a, float value_b);
+void pack_telemetry_reply(CANTxMessage *msg, uint8_t var_a, uint8_t var_b);
+int can_unpack_two_floats(CANRxMessage *msg, float *a, float *b);
 float can_read_variable(uint8_t var_id);
 /* USER CODE END Prototypes */
 

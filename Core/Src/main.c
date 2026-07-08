@@ -175,8 +175,8 @@ int main(void)
   if(isnan(I_BW) || I_BW==-1){I_BW = 1000;}
   if(isnan(I_MAX) || I_MAX ==-1){I_MAX=40;}
   if(isnan(I_FW_MAX) || I_FW_MAX ==-1){I_FW_MAX=0;}
-  if(CAN_ID==-1){CAN_ID = 1;}
-  if(CAN_MASTER==-1){CAN_MASTER = 0;}
+  if((CAN_ID < 0) || (CAN_ID > 127)){CAN_ID = 1;}			// 7-bit node ID - the upper 4 CAN ID bits are the opcode
+  if((CAN_MASTER < 0) || (CAN_MASTER > 127)){CAN_MASTER = 0;}
   if(CAN_TIMEOUT==-1){CAN_TIMEOUT = 1000;}
   if(isnan(R_NOMINAL) || R_NOMINAL==-1){R_NOMINAL = 0.0f;}
   if(isnan(TEMP_MAX) || TEMP_MAX==-1){TEMP_MAX = 125.0f;}
