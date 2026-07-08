@@ -110,6 +110,7 @@ extern CAN_HandleTypeDef hcan1;
 #define CAN_VAR_I_C			10		// phase C current (A)
 #define CAN_VAR_THETA_ELEC	11		// electrical angle (rad)
 #define CAN_VAR_FW_INT		12		// field weakening current (A)
+#define CAN_VAR_FAULT		13		// latched fault bits (FAULT_x in foc.h), as a float.  0.0 = no fault
 
 /* USER CODE END Private defines */
 

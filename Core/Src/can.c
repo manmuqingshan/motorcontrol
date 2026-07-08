@@ -269,6 +269,7 @@ float can_read_variable(uint8_t var_id){
         case CAN_VAR_I_C:			return controller.i_c;
         case CAN_VAR_THETA_ELEC:	return comm_encoder.elec_angle;
         case CAN_VAR_FW_INT:		return controller.fw_int;
+        case CAN_VAR_FAULT:			return (float)controller.fault;
         default:					return NAN;		// unknown ID reads back NaN
         }
     }

@@ -11,6 +11,11 @@
 #include <stdint.h>
 #include "position_sensor.h"
 
+/* Latched fault bits.  Any nonzero controller.fault forces the FSM into
+ * FAULT_MODE (gates off) until explicitly cleared by exiting to the menu */
+#define FAULT_OV		(1<<0)		// bus overvoltage
+#define FAULT_OC		(1<<1)		// phase overcurrent
+
 
 typedef struct{
     int adc_a_raw, adc_b_raw, adc_vbus_raw;                 // Raw ADC Values
@@ -38,6 +43,9 @@ typedef struct{
     float v_max, v_ref, fw_int;                             // output voltage magnitude, field-weakening integral
     int otw_flag;                                           // Over-temp warning
     float i_max;											// Maximum current
+    uint32_t fault;                                         // Latched fault bits (FAULT_x)
+    float i_oc_limit;                                       // Overcurrent fault threshold
+    float fault_vbus, fault_iabs;                           // Values captured when a fault first latched
     } ControllerStruct;
 
 typedef struct{
@@ -61,6 +69,7 @@ void reset_observer(ObserverStruct *observer);
 void init_controller_params(ControllerStruct *controller);
 void commutate(ControllerStruct *controller, EncoderStruct *encoder);
 void torque_control(ControllerStruct *controller);
+void check_faults(ControllerStruct *controller);
 void update_observer(ControllerStruct *controller, ObserverStruct *observer);
 void field_weaken(ControllerStruct *controller);
 void zero_commands(ControllerStruct * controller);

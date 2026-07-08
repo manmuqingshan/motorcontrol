@@ -8,57 +8,26 @@
 #ifndef INC_PREFERENCE_WRITER_H_
 #define INC_PREFERENCE_WRITER_H_
 
+#include <stdint.h>
 
-#ifndef __PREFERENCE_WRITER_H
-#define __PREFERENCE_WRITER_H
+/* Flash-backed config storage.
+ *
+ * The user config registers (user_config.h: 256 ints + 64 floats) are stored
+ * as a block with a magic number, layout version, sequence counter, and CRC,
+ * ping-ponged between two flash sectors.  Each save erases and rewrites the
+ * sector NOT holding the newest valid block, so a power loss during a save
+ * can never lose the previous config.  At load time, the valid block with
+ * the highest sequence number wins.  Legacy (pre-CRC) configs are imported
+ * automatically on first boot after a firmware upgrade. */
 
-#include "flash_writer.h"
-#include "stdbool.h"
-
-/*
-class PreferenceWriter {
-public:
-    PreferenceWriter(uint32_t sector);
-    void open();
-    bool ready();
-    void write(int x, int index);
-    void write(float x, int index);
-    void flush();
-    void load();
-    void close();
-private:
-    FlashWriter *writer;
-    uint32_t __sector;
-    bool __ready;
-};
-*/
-
-/*
-PreferenceWriter::PreferenceWriter(uint32_t sector) {
-    writer = new FlashWriter(sector);
-    __sector = sector;
-    __ready = false;
-}
-*/
 typedef struct{
-	FlashWriter fw;
-	uint32_t sector;
-	bool ready;
+	uint32_t sequence;			// sequence number of the loaded / last-saved block
+	uint32_t active_sector;		// 0 or 1: which sector holds the newest valid block
 }PreferenceWriter;
 
-void preference_writer_init(PreferenceWriter * pr, uint32_t sector);
-void preference_writer_open(PreferenceWriter * pr);
-bool preference_writer_ready(PreferenceWriter pr);
-void preference_writer_write_int(int x, int index);
-void preference_writer_write_float(float x, int index);
-void preference_writer_flush(PreferenceWriter * pr);
-void preference_writer_load(PreferenceWriter pr);
-void preference_writer_close(PreferenceWriter *pr);
+void preference_writer_load(PreferenceWriter *pr);
+int preference_writer_save(PreferenceWriter *pr);	// 1 on success, verified by CRC read-back
 
 extern PreferenceWriter prefs;
-
-
-#endif
-
 
 #endif /* INC_PREFERENCE_WRITER_H_ */

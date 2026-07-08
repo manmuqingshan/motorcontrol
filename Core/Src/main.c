@@ -38,8 +38,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "stm32f4xx_flash.h"
-#include "flash_writer.h"
 #include "position_sensor.h"
 #include "preference_writer.h"
 #include "hw_config.h"
@@ -166,8 +164,7 @@ int main(void)
   watchdog_init();
 
   /* Load settings from flash */
-  preference_writer_init(&prefs, 6);
-  preference_writer_load(prefs);
+  preference_writer_load(&prefs);
 
   /* Sanitize configs in case flash is empty*/
   if(E_ZERO==-1){E_ZERO = 0;}

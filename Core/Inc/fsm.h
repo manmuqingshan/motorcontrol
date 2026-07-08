@@ -22,6 +22,7 @@ extern "C" {
 #define SETUP_MODE          4
 #define ENCODER_MODE        5
 #define INIT_TEMP_MODE      6
+#define FAULT_MODE          7
 
 #define MENU_CMD			27
 #define MOTOR_CMD			'm'

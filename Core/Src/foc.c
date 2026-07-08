@@ -140,6 +140,11 @@ void init_controller_params(ControllerStruct *controller){
     controller->flux_linkage = KT/(1.5f*PPAIRS);
     if(I_MAX <= 40.0f){controller->i_scale = I_SCALE;}
     else{controller->i_scale = 2.0f*I_SCALE;}
+    controller->fault = 0;
+    /* Gross overcurrent latch threshold.  Note that at 40X CSA gain the sense
+     * range (~41 A) can clip below 1.5*I_MAX - measurement saturation then
+     * masks this fault, and the DRV8323 VDS OCP is the protection for shorts */
+    controller->i_oc_limit = 1.5f*I_MAX;
 
     }
 
@@ -282,6 +287,22 @@ void torque_control(ControllerStruct *controller){
     }
 
 
+
+void check_faults(ControllerStruct *controller){
+	/* Latched software faults, checked every commutation cycle in all states.
+	 * A nonzero fault word forces the FSM into FAULT_MODE (gates off) until
+	 * the user explicitly exits to the menu.  The value that tripped each
+	 * fault is captured for the fault report. */
+	if(controller->v_bus > V_BUS_FAULT){
+		if(!(controller->fault & FAULT_OV)){controller->fault_vbus = controller->v_bus;}
+		controller->fault |= FAULT_OV;
+	}
+	float i_abs = fmaxf3(fabsf(controller->i_a), fabsf(controller->i_b), fabsf(controller->i_c));
+	if(i_abs > controller->i_oc_limit){
+		if(!(controller->fault & FAULT_OC)){controller->fault_iabs = i_abs;}
+		controller->fault |= FAULT_OC;
+	}
+}
 
 void zero_commands(ControllerStruct * controller){
 	controller->t_ff = 0;
