@@ -73,8 +73,8 @@ void abc( float theta, float d, float q, float *a, float *b, float *c){
     Phase current amplitude = lengh of dq vector
     i.e. iq = 1, id = 0, peak phase current of 1 */
 
-    float cf = cos_lut(theta);
-    float sf = sin_lut(theta);
+    float sf, cf;
+    sincos_lut(theta, &sf, &cf);
 
     *a = cf*d - sf*q;
     *b = (SQRT3_2*sf-.5f*cf)*d - (-SQRT3_2*cf-.5f*sf)*q;
@@ -87,8 +87,8 @@ void dq0(float theta, float a, float b, float c, float *d, float *q){
     Phase current amplitude = lengh of dq vector
     i.e. iq = 1, id = 0, peak phase current of 1*/
 
-    float cf = cos_lut(theta);
-    float sf = sin_lut(theta);
+    float sf, cf;
+    sincos_lut(theta, &sf, &cf);
 
     *d = 0.6666667f*(cf*a + (SQRT3_2*sf-.5f*cf)*b + (-SQRT3_2*sf-.5f*cf)*c);   ///Faster DQ0 Transform
     *q = 0.6666667f*(-sf*a - (-SQRT3_2*cf-.5f*sf)*b - (SQRT3_2*cf-.5f*sf)*c);

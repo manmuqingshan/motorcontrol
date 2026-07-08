@@ -56,13 +56,39 @@ float uint_to_float(int x_int, float x_min, float x_max, int bits){
     return ((float)x_int)*span/((float)((1<<bits)-1)) + offset;
     }
 
-float sin_lut(float theta){
-	theta = fmodf(theta, TWO_PI_F);
-	theta = theta<0 ? theta + TWO_PI_F : theta;
+void sincos_lut(float theta, float *s, float *c){
+	/* Table-based sine and cosine with linear interpolation.
+	 * One range reduction serves both outputs; cosine comes from the same
+	 * table a quarter turn ahead.  Max error ~2e-5, ~30 cycles for the pair.
+	 *
+	 * Range reduction is done by multiplication instead of fmodf, which is
+	 * exact to a small fraction of a table step for |theta| up to a few
+	 * thousand radians - far beyond the largest angle used here (one
+	 * mechanical revolution of electrical angle during calibration) */
+	float k = theta*INV_TWO_PI_F;			// angle in revolutions
+	k = k - (float)(int)k;					// fractional revolution, (-1, 1)
+	if(k < 0.0f){k += 1.0f;}				// [0, 1)...
+	if(k >= 1.0f){k = 0.0f;}				// ...except -epsilon + 1.0f can round to exactly 1.0f
 
-	return sin_tab[(int) (LUT_MULT*theta)];
+	float idx = k*512.0f;
+	int i = (int)idx;						// 0-511
+	float frac = idx - (float)i;
+
+	float s0 = sin_tab[i];					// sin_tab has 513 entries, so i+1 is always valid
+	*s = s0 + frac*(sin_tab[i+1] - s0);
+	int j = (i + 128) & 511;				// cos(theta) = sin(theta + pi/2) = 128 steps ahead
+	float c0 = sin_tab[j];
+	*c = c0 + frac*(sin_tab[j+1] - c0);
+}
+
+float sin_lut(float theta){
+	float s, c;
+	sincos_lut(theta, &s, &c);
+	return s;
 }
 
 float cos_lut(float theta){
-	return sin_lut(PI_OVER_2_F - theta);
+	float s, c;
+	sincos_lut(theta, &s, &c);
+	return c;
 }

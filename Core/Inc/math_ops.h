@@ -7,7 +7,7 @@
 #define PI_F 		3.14159274101f
 #define TWO_PI_F 	6.28318548203f
 #define PI_OVER_2_F	1.57079632679f
-#define LUT_MULT	81.4873308631f
+#define INV_TWO_PI_F	0.15915494310f
 
 #include "math.h"
 
@@ -20,6 +20,7 @@ void limit_norm(float *x, float *y, float limit);
 void limit(float *x, float min, float max);
 int float_to_uint(float x, float x_min, float x_max, int bits);
 float uint_to_float(int x_int, float x_min, float x_max, int bits);
+void sincos_lut(float theta, float *s, float *c);
 float sin_lut(float theta);
 float cos_lut(float theta);
 
