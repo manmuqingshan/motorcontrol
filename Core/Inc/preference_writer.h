@@ -23,6 +23,10 @@
 typedef struct{
 	uint32_t sequence;			// sequence number of the loaded / last-saved block
 	uint32_t active_sector;		// 0 or 1: which sector holds the newest valid block
+	int loaded;					// 1 if a config was found, 0 if the chip is erased.
+								// The registers are zero-initialised, and zero is a
+								// legal-looking value for most of them, so "erased"
+								// cannot be detected from their contents alone
 }PreferenceWriter;
 
 void preference_writer_load(PreferenceWriter *pr);

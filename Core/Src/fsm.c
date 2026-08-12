@@ -110,11 +110,13 @@
 				HAL_GPIO_WritePin(LED, GPIO_PIN_SET );
 				reset_foc(&controller);
 				drv_enable_gd(drv);
+				controller.gate_drive_enabled = 1;
 				break;
 			case FAULT_MODE:
 				/* Make sure the gate drive is off no matter what state we
 				 * faulted out of, and report through the main loop */
 				drv_disable_gd(drv);
+				controller.gate_drive_enabled = 0;
 				reset_foc(&controller);
 				zero_commands(&controller);
 				HAL_GPIO_WritePin(LED, GPIO_PIN_RESET );
@@ -132,6 +134,7 @@
 				comm_encoder.e_zero = 0;
 				memset(&comm_encoder.offset_lut, 0, sizeof(comm_encoder.offset_lut));
 				drv_enable_gd(drv);
+				controller.gate_drive_enabled = 1;
 				break;
 
 		}
@@ -159,6 +162,7 @@
 				//if( (fabs(controller.i_q_filt)<1.0f) && (fabs(controller.i_d_filt)<1.0f) ){
 					fsmstate->ready = 1;
 					drv_disable_gd(drv);
+					controller.gate_drive_enabled = 0;
 					reset_foc(&controller);
 					//printf("Leaving Motor Mode\r\n");
 					HAL_GPIO_WritePin(LED, GPIO_PIN_RESET );
@@ -168,6 +172,7 @@
 			case CALIBRATION_MODE:
 				//printf("Exiting Calibration Mode\r\n");
 				drv_disable_gd(drv);
+				controller.gate_drive_enabled = 0;
 				fsmstate->ready = 1;
 				break;
 			case FAULT_MODE:

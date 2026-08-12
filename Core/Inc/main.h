@@ -47,7 +47,7 @@ extern "C" {
 
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
-
+#define VERSION_NUM 2.0f		// here rather than main.c so can_read_variable() can report it
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/

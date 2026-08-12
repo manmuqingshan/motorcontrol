@@ -41,6 +41,7 @@ extern uint8_t Serial2RxBuffer[1];
 void MX_USART2_UART_Init(void);
 
 /* USER CODE BEGIN Prototypes */
+void serial_rx_keepalive(void);	// re-arm serial RX if it ever stops
 int __io_putchar(int ch);
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart);
 /* USER CODE END Prototypes */

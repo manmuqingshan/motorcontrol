@@ -118,8 +118,27 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* uartHandle)
 #include "structs.h"
 
 int __io_putchar(int ch) {
-HAL_UART_Transmit(&huart2, (uint8_t*)&ch, 1, 0xffff);
-return 0;
+	/* Written straight to the peripheral instead of through HAL_UART_Transmit,
+	 * which takes the handle lock for the duration of every character.  The RX
+	 * complete callback re-arms reception with HAL_UART_Receive_IT, and that
+	 * silently returns HAL_BUSY when the handle is locked - so a byte arriving
+	 * while anything was printing left reception disarmed for good.  Output
+	 * kept working, input never came back.  Touching only the data register
+	 * means printing can no longer interfere with reception at all. */
+	while(!(USART2->SR & USART_SR_TXE)){;}
+	USART2->DR = (uint8_t)ch & 0x1FF;
+	return 0;
+}
+
+void serial_rx_keepalive(void){
+	/* Re-arm reception if it is ever found disarmed.  The lock race above was
+	 * one way to end up here; a parity/framing/overrun error that arrives
+	 * between the abort and the error callback is another.  Called from the
+	 * main loop, so recovery costs at most one millisecond and the console can
+	 * never be dead for the rest of the session. */
+	if(huart2.RxState != HAL_UART_STATE_BUSY_RX){
+		HAL_UART_Receive_IT(&huart2, (uint8_t *)Serial2RxBuffer, 1);
+	}
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)

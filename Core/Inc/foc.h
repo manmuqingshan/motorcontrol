@@ -45,6 +45,8 @@ typedef struct{
     float i_max;											// Maximum current
     uint32_t fault;                                         // Latched fault bits (FAULT_x)
     float i_oc_limit;                                       // Overcurrent fault threshold
+    uint8_t gate_drive_enabled;                             // Set alongside drv_enable_gd/drv_disable_gd.
+                                                            // Overcurrent is only meaningful while driving
     float fault_vbus, fault_iabs;                           // Values captured when a fault first latched
     } ControllerStruct;
 

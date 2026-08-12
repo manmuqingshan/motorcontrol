@@ -77,6 +77,7 @@ void preference_writer_load(PreferenceWriter *pr){
 		memcpy(__float_reg, (const void *)&b[OFFS_PAYLOAD + N_INT_REG], N_FLOAT_REG*sizeof(float));
 		pr->active_sector = src;
 		pr->sequence = seq[src];
+		pr->loaded = 1;
 		return;
 	}
 
@@ -87,7 +88,8 @@ void preference_writer_load(PreferenceWriter *pr){
 	 * new format to the OTHER sector, so the legacy data stays intact as a
 	 * fallback until the save after that. */
 	const uint32_t *legacy = (const uint32_t *)sector_addr[0];
-	if(legacy[0] != 0xFFFFFFFF){
+	pr->loaded = (legacy[0] != 0xFFFFFFFF);
+	if(pr->loaded){
 		for(int i = 0; i < N_INT_REG; i++){__int_reg[i] = (int)legacy[i];}
 		memcpy(__float_reg, (const void *)&legacy[N_INT_REG], N_FLOAT_REG*sizeof(float));
 	}

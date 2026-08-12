@@ -96,7 +96,8 @@ extern CAN_HandleTypeDef hcan1;
  * from before the ID-opcode scheme) */
 #define CAN_LEGACY_READ_VAR		0x01
 
-/* Variable IDs readable with CAN_OP_READ_VAR.  Unknown IDs read back NaN */
+/* Variable IDs readable with CAN_OP_READ_VAR.  Unknown IDs read back NaN.
+ * IDs 0-13 are live measurements, 14-23 read-only config and status */
 #define CAN_VAR_POSITION	0		// multiturn position (rad, output shaft)
 #define CAN_VAR_VELOCITY	1		// velocity (rad/s, output shaft)
 #define CAN_VAR_I_Q			2		// q-axis current (A, filtered)
@@ -111,6 +112,31 @@ extern CAN_HandleTypeDef hcan1;
 #define CAN_VAR_THETA_ELEC	11		// electrical angle (rad)
 #define CAN_VAR_FW_INT		12		// field weakening current (A)
 #define CAN_VAR_FAULT		13		// latched fault bits (FAULT_x in foc.h), as a float.  0.0 = no fault
+
+/* Read-only configuration and status.  A host can't otherwise see any of this -
+ * the setup values live in flash and are only shown on the serial setup screen,
+ * and the FSM state wasn't reachable at all.  Purely additive: firmware without
+ * these answers NaN (the default case below), so an older board on the same bus
+ * is fine and a host can feature-detect by reading one and testing for NaN */
+#define CAN_VAR_P_MAX		14		// position setpoint limit (rad, output shaft).  P_MIN is -P_MAX
+#define CAN_VAR_V_MAX		15		// velocity setpoint limit (rad/s, output shaft).  V_MIN is -V_MAX
+#define CAN_VAR_KP_MAX		16		// max position gain (N-m/rad)
+#define CAN_VAR_KD_MAX		17		// max velocity gain (N-m/rad/s)
+#define CAN_VAR_I_MAX		18		// current limit (A)
+#define CAN_VAR_KT			19		// torque constant (N-m/A)
+#define CAN_VAR_GR			20		// gear ratio
+#define CAN_VAR_CAN_TIMEOUT	21		// command timeout (commutation cycles, 0 = disabled)
+#define CAN_VAR_VERSION		22		// firmware version (VERSION_NUM)
+#define CAN_VAR_MODE		23		// current FSM state (the *_MODE values in fsm.h)
+
+/* bxCAN error counters, straight out of CAN_ESR.  A host seeing dropped frames
+ * cannot otherwise tell a noisy bus from its own adapter losing them: frames
+ * corrupted on the wire fail CRC and simply never arrive.  These count the
+ * controller's own view of bus health, so a rising TEC/REC while a motor runs
+ * points at electrical noise or termination rather than at anything on the host */
+#define CAN_VAR_CAN_TEC		24		// transmit error counter (0-255)
+#define CAN_VAR_CAN_REC		25		// receive error counter (0-255)
+#define CAN_VAR_CAN_LEC		26		// last error code (CAN_ESR LEC field, 0 = none)
 
 /* USER CODE END Private defines */
 

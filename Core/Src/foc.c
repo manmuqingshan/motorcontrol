@@ -61,6 +61,14 @@ void analog_sample (ControllerStruct *controller){
 	}
 	controller->adc_vbus_raw = ADC_CH_VBUS.Instance->JDR1;
 	controller->v_bus = (float)controller->adc_vbus_raw*V_SCALE;
+	/* Filtered here rather than in commutate() so it tracks in every state.
+	 * It used to be updated only while commutating, which left it stuck at its
+	 * power-on value of zero whenever the gate drive was off - so CAN telemetry
+	 * and the legacy packed reply both reported 0 V outside motor mode, and
+	 * v_max started from zero on entry to motor mode until the filter caught
+	 * up.  Same filter, same update rate while commutating: no change to
+	 * control behaviour, but the value is now always valid */
+	controller->v_bus_filt = (1.0f-VBUS_FILT_ALPHA)*controller->v_bus_filt + VBUS_FILT_ALPHA*controller->v_bus;
 
     controller->i_a = controller->i_scale*(float)(controller->adc_a_raw - controller->adc_a_offset);    // Calculate phase currents from ADC readings
     controller->i_b = controller->i_scale*(float)(controller->adc_b_raw - controller->adc_b_offset);
@@ -237,7 +245,8 @@ void commutate(ControllerStruct *controller, EncoderStruct *encoder)
 
        controller->i_q_filt = (1.0f-CURRENT_FILT_ALPHA)*controller->i_q_filt + CURRENT_FILT_ALPHA*controller->i_q;	// these aren't used for control but are sometimes nice for debugging
        controller->i_d_filt = (1.0f-CURRENT_FILT_ALPHA)*controller->i_d_filt + CURRENT_FILT_ALPHA*controller->i_d;
-       controller->v_bus_filt = (1.0f-VBUS_FILT_ALPHA)*controller->v_bus_filt + VBUS_FILT_ALPHA*controller->v_bus;	// used for voltage saturation
+       /* v_bus_filt is maintained by analog_sample(), which runs every cycle in
+        * every state - see the note there */
 
        controller->v_max = OVERMODULATION*controller->v_bus_filt*(DTC_MAX-DTC_MIN)*SQRT1_3;
        controller->i_max = I_MAX; //I_MAX*(!controller->otw_flag) + I_MAX_CONT*controller->otw_flag;
@@ -297,10 +306,20 @@ void check_faults(ControllerStruct *controller){
 		if(!(controller->fault & FAULT_OV)){controller->fault_vbus = controller->v_bus;}
 		controller->fault |= FAULT_OV;
 	}
-	float i_abs = fmaxf3(fabsf(controller->i_a), fabsf(controller->i_b), fabsf(controller->i_c));
-	if(i_abs > controller->i_oc_limit){
-		if(!(controller->fault & FAULT_OC)){controller->fault_iabs = i_abs;}
-		controller->fault |= FAULT_OC;
+	/* Overcurrent is only checked while the gate drive is on.  With the FETs
+	 * off the phase current is noise around zero, so a low threshold latches on
+	 * nothing - and because a latched fault forces FAULT_MODE from any state,
+	 * that locks the user out of the very menu needed to raise the limit.  A
+	 * zero I_MAX (an erased chip, or 0.0 entered in setup, which is allowed)
+	 * made that happen on the first control cycle after boot.
+	 * Overvoltage above is deliberately still checked in every state: the bus
+	 * can be driven over the limit with the gates off. */
+	if(controller->gate_drive_enabled){
+		float i_abs = fmaxf3(fabsf(controller->i_a), fabsf(controller->i_b), fabsf(controller->i_c));
+		if(i_abs > controller->i_oc_limit){
+			if(!(controller->fault & FAULT_OC)){controller->fault_iabs = i_abs;}
+			controller->fault |= FAULT_OC;
+		}
 	}
 }
 

@@ -47,7 +47,7 @@ Invariants to preserve:
 
 ## CAN protocol
 
-The spec-of-record is the comment table in `can.h`. Summary: 11-bit ID = `(opcode << 7) | node_id` (node ID 0–127). Opcode 0 is the legacy packed 8-byte protocol (replies to `CAN_MASTER`), so plain-ID masters work unchanged. Float opcodes: SET_PV / SET_GAINS / SET_TFF (clamped, NaN-rejected, reset the command timeout), SET_REPLY_FORMAT (RAM only), READ_VARS and telemetry replies on `(0xF<<7)|CAN_ID`. Reads deliberately do **not** reset the CAN command timeout. Readable variables are the `CAN_VAR_*` IDs; add new ones in `can_read_variable()`.
+The spec-of-record is the comment table in `can.h`. Summary: 11-bit ID = `(opcode << 7) | node_id` (node ID 0–127). Opcode 0 is the legacy packed 8-byte protocol (replies to `CAN_MASTER`), so plain-ID masters work unchanged. Float opcodes: SET_PV / SET_GAINS / SET_TFF (clamped, NaN-rejected, reset the command timeout), SET_REPLY_FORMAT (RAM only), READ_VARS and telemetry replies on `(0xF<<7)|CAN_ID`. Reads deliberately do **not** reset the CAN command timeout. Readable variables are the `CAN_VAR_*` IDs; add new ones in `can_read_variable()`. IDs 0–13 are live measurements; 14–23 are read-only config and status (setup values, `VERSION_NUM`, and the FSM state), which a host has no other way to see — the setup parameters otherwise exist only on the serial setup screen. Adding IDs is safe for older masters: unknown IDs read back NaN, so a host can feature-detect by reading one and testing for NaN.
 
 ## Conventions
 

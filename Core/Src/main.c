@@ -61,7 +61,7 @@
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
 
-#define VERSION_NUM 2.0f
+/* VERSION_NUM moved to main.h so can_read_variable() can report it over CAN */
 
 
 /* USER CODE END PM */
@@ -166,6 +166,26 @@ int main(void)
   /* Load settings from flash */
   preference_writer_load(&prefs);
 
+  /* On an erased chip nothing was loaded and the registers are still zero from
+   * BSS - and zero is a legal-looking value for most of them, so the checks
+   * below cannot tell "never set" from "set to zero".  That matters: a zero
+   * I_MAX makes the overcurrent threshold zero, so current-sense noise latches
+   * a fault on the first control cycle and the FSM is forced back to
+   * FAULT_MODE before the menu can be used to fix it.  Mark everything unset
+   * so the sanitization supplies real defaults.
+   *
+   * ENCODER_LUT is deliberately left zeroed: zero is the correct "no
+   * correction" state until calibration runs. */
+  if(!prefs.loaded){
+	  for(int i = 0; i < 64; i++){__float_reg[i] = NAN;}
+	  E_ZERO = -1;
+	  M_ZERO = -1;
+	  CAN_ID = -1;
+	  CAN_MASTER = -1;
+	  CAN_TIMEOUT = -1;
+	  PHASE_ORDER = 0;
+  }
+
   /* Sanitize configs in case flash is empty*/
   if(E_ZERO==-1){E_ZERO = 0;}
   if(M_ZERO==-1){M_ZERO = 0;}
@@ -188,6 +208,12 @@ int main(void)
   if(isnan(P_MIN)){P_MIN = -12.5f;}
   if(isnan(V_MAX)){V_MAX = 65.0f;}
   if(isnan(V_MIN)){V_MIN = -65.0f;}
+  /* Not used by the control loop today, but must not be left as NaN */
+  if(isnan(R_PHASE)){R_PHASE = 0.0f;}
+  if(isnan(R_TH)){R_TH = 0.0f;}
+  if(isnan(C_TH)){C_TH = 0.0f;}
+  if(isnan(THETA_MIN)){THETA_MIN = 0.0f;}
+  if(isnan(THETA_MAX)){THETA_MAX = 0.0f;}
 
   printf("\r\nFirmware Version Number: %.2f\r\n", VERSION_NUM);
   if(RCC->CSR & RCC_CSR_IWDGRSTF){
@@ -248,6 +274,7 @@ int main(void)
   drv_write_OCPCR(drv, TRETRY_50US, DEADTIME_50NS, OCP_RETRY, OCP_DEG_8US, VDS_LVL_0_45);
   HAL_Delay(1);
   drv_disable_gd(drv);
+  controller.gate_drive_enabled = 0;
   HAL_Delay(1);
   printf("ADC A OFFSET: %d     ADC B OFFSET: %d\r\n", controller.adc_a_offset, controller.adc_b_offset);
 
@@ -278,6 +305,10 @@ int main(void)
   while (1)
   {
 	  HAL_Delay(1);
+
+	  /* Keep the serial console alive.  Reception is interrupt-driven and can
+	   * be left disarmed by a HAL error path; this notices and restarts it */
+	  serial_rx_keepalive();
 
 	  /* Slow state machine work: printing, flash saves.  All of it was moved
 	   * out of the interrupts so it can't stall commutation */

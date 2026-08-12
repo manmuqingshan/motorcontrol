@@ -270,6 +270,25 @@ float can_read_variable(uint8_t var_id){
         case CAN_VAR_THETA_ELEC:	return comm_encoder.elec_angle;
         case CAN_VAR_FW_INT:		return controller.fw_int;
         case CAN_VAR_FAULT:			return (float)controller.fault;
+
+        /* Read-only config and status.  All plain register/struct loads, so this
+         * costs the interrupt nothing beyond the wider jump table */
+        case CAN_VAR_P_MAX:			return P_MAX;
+        case CAN_VAR_V_MAX:			return V_MAX;
+        case CAN_VAR_KP_MAX:		return KP_MAX;
+        case CAN_VAR_KD_MAX:		return KD_MAX;
+        case CAN_VAR_I_MAX:			return I_MAX;
+        case CAN_VAR_KT:			return KT;
+        case CAN_VAR_GR:			return GR;
+        case CAN_VAR_CAN_TIMEOUT:	return (float)CAN_TIMEOUT;
+        case CAN_VAR_VERSION:		return VERSION_NUM;
+        case CAN_VAR_MODE:			return (float)state.state;
+
+        /* Bus health, read straight from the error status register */
+        case CAN_VAR_CAN_TEC:		return (float)((CAN_H.Instance->ESR >> 16) & 0xFF);
+        case CAN_VAR_CAN_REC:		return (float)((CAN_H.Instance->ESR >> 24) & 0xFF);
+        case CAN_VAR_CAN_LEC:		return (float)((CAN_H.Instance->ESR >> 4) & 0x7);
+
         default:					return NAN;		// unknown ID reads back NaN
         }
     }
